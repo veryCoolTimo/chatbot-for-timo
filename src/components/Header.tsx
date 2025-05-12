@@ -12,9 +12,10 @@ interface HeaderProps {
   onNewChat: () => void;
   tokenCount: number;
   onToggleSettings: () => void; // Add prop to toggle settings modal
+  customModels?: Model[]; // Новый проп
 }
 
-export default function Header({ currentModel, onModelChange, onNewChat, tokenCount, onToggleSettings }: HeaderProps) {
+export default function Header({ currentModel, onModelChange, onNewChat, tokenCount, onToggleSettings, customModels = [] }: HeaderProps) {
   const [models, setModels] = useState<Model[]>([]);
   const [isLoadingModels, setIsLoadingModels] = useState(true);
   const [isDarkMode, setIsDarkMode] = useState(false);
@@ -90,35 +91,35 @@ export default function Header({ currentModel, onModelChange, onNewChat, tokenCo
     }
   }, [tokenCount, currentModel]);
 
+  // Объединяем customModels и models без дубликатов
+  const allModels = [...customModels, ...models.filter(m => !customModels.some(cm => cm.id === m.id))];
+
   return (
-    <header className="sticky top-0 z-50 w-full glass-header py-3 px-4">
-      <div className="max-w-6xl mx-auto flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <h1 className="text-xl font-bold">TimoChatBot</h1>
-          <motion.button 
+    <header className="glass-header">
+      <div className="flex flex-row items-center justify-between w-full flex-nowrap gap-2">
+        <div className="flex flex-row items-center gap-3 min-w-0">
+          <h1 className="text-lg font-semibold text-gray-800 dark:text-gray-100 whitespace-nowrap">TimoChatBot</h1>
+          <button 
             onClick={onNewChat}
             className="btn btn-primary"
-            variants={buttonVariants}
-            whileHover="hover"
-            whileTap="tap"
           >
             New Chat
-          </motion.button>
+          </button>
         </div>
-        
-        <div className="flex items-center gap-3">
+        <div className="btn-group flex flex-row items-center flex-nowrap gap-2 min-w-0 justify-end flex-1">
           <select 
             value={currentModel ? currentModel.id : ""} 
             onChange={handleSelectModelChange}
             disabled={isLoadingModels}
-            className="glass-input px-3 py-1.5 text-sm min-w-[180px]"
+            className="glass-input px-3 py-1.5 text-sm min-w-[140px] max-w-[240px] truncate overflow-hidden text-ellipsis"
+            style={{ maxWidth: 240, minWidth: 140 }}
           >
             {isLoadingModels ? (
-              <option value="">Loading Models...</option>
+              <option value="">⏳ Searching...</option>
             ) : (
               <>
                 {!currentModel && <option value="" disabled>Select Model</option>}
-                {models.map((model) => (
+                {allModels.map((model) => (
                   <option key={model.id} value={model.id}>
                     {model.name}
                   </option>
@@ -126,10 +127,12 @@ export default function Header({ currentModel, onModelChange, onNewChat, tokenCo
               </>
             )}
           </select>
-          
-          <div className="glass-card px-3 py-1.5 text-sm min-w-[100px] text-center relative group">
+          <div 
+            className="glass-surface px-3 py-1.5 text-sm min-w-[90px] max-w-[150px] text-center relative group rounded-lg shadow-none overflow-hidden text-ellipsis whitespace-nowrap"
+            style={{maxWidth:150, minWidth:90}}
+          >
             Tokens: {tokenCount}
-            {estimatedCost !== null && (
+            {estimatedCost !== null && currentModel && currentModel.pricing && currentModel.pricing.prompt > 0 && (
               <div className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-max max-w-xs p-2 
                             bg-gray-800 text-white text-xs rounded-md shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-300
                             pointer-events-none z-10">
@@ -138,28 +141,20 @@ export default function Header({ currentModel, onModelChange, onNewChat, tokenCo
               </div>
             )}
           </div>
-          
-          <motion.button 
+          <button 
             onClick={handleThemeToggle} 
-            className="p-2 rounded-full glass-card hover:bg-white/50 dark:hover:bg-gray-700/50"
+            className="btn glass-surface p-1.5 min-w-0 w-8 h-8 flex items-center justify-center hover:bg-black/5 dark:hover:bg-white/5 shadow-none"
             aria-label={isDarkMode ? "Switch to light mode" : "Switch to dark mode"}
-            variants={buttonVariants}
-            whileHover="hover"
-            whileTap="tap"
           >
-            {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-          </motion.button>
-          
-          <motion.button 
+            {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          </button>
+          <button 
             onClick={onToggleSettings}
-            className="p-2 rounded-full glass-card hover:bg-white/50 dark:hover:bg-gray-700/50"
+            className="btn glass-surface p-1.5 min-w-0 w-8 h-8 flex items-center justify-center hover:bg-black/5 dark:hover:bg-white/5 shadow-none"
             aria-label="Settings"
-            variants={buttonVariants}
-            whileHover="hover"
-            whileTap="tap"
           >
-            <Settings className="w-5 h-5" />
-          </motion.button>
+            <Settings className="w-4 h-4" />
+          </button>
         </div>
       </div>
     </header>

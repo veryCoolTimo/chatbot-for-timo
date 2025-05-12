@@ -9,6 +9,7 @@ import { sendChat } from '../lib/openrouter';
 import { createParser, EventSourceMessage } from 'eventsource-parser';
 import { encode } from 'gpt-tokenizer';
 import SettingsModal from '../components/SettingsModal';
+import copy from 'copy-to-clipboard';
 
 export default function Home() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -17,6 +18,9 @@ export default function Home() {
   const [tokenCount, setTokenCount] = useState(0);
   const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [customModels, setCustomModels] = useState<Model[]>([]);
+  const [inputValue, setInputValue] = useState("");
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const chatWindowRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -72,6 +76,7 @@ export default function Home() {
   const handleNewChat = () => {
     setMessages([]);
     setTokenCount(0);
+    setInputValue("");
   };
 
   const handleModelChange = (model: Model | null) => {
@@ -91,23 +96,37 @@ export default function Home() {
       id: modelId.trim(),
       name: `${modelId.trim()} (Custom)`,
       description: 'Custom model added via settings',
-      pricing: { prompt: 0, completion: 0 } // Assume unknown/free or handle differently
+      pricing: { prompt: 0, completion: 0 }
     };
     setCurrentModel(customModel);
-    // Optionally, add to the list of models in Header state? 
-    // For now, just sets it as current. Can enhance later to add to dropdown.
-    setIsSettingsModalOpen(false); // Close settings after adding
+    setCustomModels(prev => prev.some(m => m.id === customModel.id) ? prev : [...prev, customModel]);
+    setIsSettingsModalOpen(false);
+  };
+
+  const handleEditMessage = (index: number) => {
+    const messageToEdit = messages[index];
+    if (messageToEdit && messageToEdit.role === 'user') {
+      setInputValue(messageToEdit.content);
+      setEditingIndex(index);
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+      }
+      setMessages(prev => prev.filter((_, i) => i !== index));
+      setEditingIndex(null);
+    }
   };
 
   const handleSend = async (content: string, files?: File[]) => {
+    const finalContent = content || inputValue;
     if (!currentModel) {
       alert('Please select a model first.');
       return;
     }
-    if (isStreaming && !content && (!files || files.length === 0)) return;
+    if (isStreaming && !finalContent && (!files || files.length === 0)) return;
 
-    const newMessage: ChatMessage = { role: 'user', content };
+    const newMessage: ChatMessage = { role: 'user', content: finalContent };
     setMessages(prev => [...prev, newMessage]);
+    setInputValue("");
     setIsStreaming(true);
 
     try {
@@ -175,65 +194,82 @@ export default function Home() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-gradient-to-br from-gray-50 to-blue-100 dark:from-gray-900 dark:to-blue-950 font-inter">
-      <div className="absolute inset-0 bg-[url('/grid.svg')] bg-center [mask-image:linear-gradient(180deg,white,rgba(255,255,255,0))] dark:[mask-image:linear-gradient(180deg,white,rgba(255,255,255,0))] pointer-events-none"></div>
-      <Header 
-        currentModel={currentModel}
-        onModelChange={handleModelChange}
-        onNewChat={handleNewChat}
-        tokenCount={tokenCount}
-        onToggleSettings={handleToggleSettings}
-      />
-      <div ref={chatWindowRef} className="flex-1 overflow-hidden">
-        <ChatWindow messages={messages} />
-      </div>
-      <InputBar 
-        onSend={handleSend} 
-        isStreaming={isStreaming} 
-        isModelSelected={!!currentModel}
-        textareaRef={textareaRef} 
-      />
-      
-      {/* Render Settings Modal conditionally */}
-      {isSettingsModalOpen && (
-        <SettingsModal 
-          isOpen={isSettingsModalOpen} 
-          onClose={handleToggleSettings}
-          onAddModel={handleAddModel}
+    <div className="main-container flex flex-col min-h-screen">
+      <div className="chat-shell flex flex-col min-h-screen">
+        <Header 
+          currentModel={currentModel}
+          onModelChange={handleModelChange}
+          onNewChat={handleNewChat}
+          tokenCount={tokenCount}
+          onToggleSettings={handleToggleSettings}
+          customModels={customModels}
         />
+        <div ref={chatWindowRef} className="flex-1 min-h-0 w-full max-w-full flex flex-col items-center overflow-y-auto">
+          <ChatWindow 
+            messages={messages} 
+            isStreaming={isStreaming} 
+            onEditMessage={handleEditMessage}
+            editingIndex={editingIndex}
+            setEditingIndex={setEditingIndex}
+          />
+        </div>
+        <InputBar 
+          initialValue={inputValue}
+          onSend={handleSend} 
+          isStreaming={isStreaming} 
+          isModelSelected={!!currentModel}
+          textareaRef={textareaRef} 
+        />
+      </div>
+      {/* Settings Modal */}
+      {isSettingsModalOpen && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <SettingsModal 
+              isOpen={isSettingsModalOpen} 
+              onClose={handleToggleSettings}
+              onAddModel={handleAddModel}
+            />
+          </div>
+        </div>
       )}
-
       {/* Help Modal */}
       {isHelpModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="glass-card p-6 max-w-md mx-4 relative">
-            <button 
-              onClick={() => setIsHelpModalOpen(false)}
-              className="absolute top-2 right-2 p-1 rounded-full hover:bg-gray-200/20"
-              aria-label="Close help modal"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
-              </svg>
-            </button>
-            <h2 className="text-xl font-semibold mb-4">Keyboard Shortcuts</h2>
-            <div className="space-y-3">
-              <div className="flex justify-between">
-                <span>Focus message input</span>
-                <span className="glass-card px-2 py-1 text-sm">Ctrl/⌘ + K</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Toggle this help</span>
-                <span className="glass-card px-2 py-1 text-sm">Ctrl/⌘ + /</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Send message</span>
-                <span className="glass-card px-2 py-1 text-sm">Enter</span>
-              </div>
-              <div className="flex justify-between">
-                <span>New line in message</span>
-                <span className="glass-card px-2 py-1 text-sm">Shift + Enter</span>
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <div className="glass-card p-6 relative">
+              <button 
+                onClick={() => setIsHelpModalOpen(false)}
+                className="absolute top-3 right-3 p-1 rounded-full hover:bg-black/10 dark:hover:bg-white/10 text-gray-600 dark:text-gray-300 transition-colors"
+                aria-label="Close help modal"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+              </button>
+              <h2 className="text-xl font-semibold mb-4 text-gray-800 dark:text-gray-100">Keyboard Shortcuts</h2>
+              <div className="space-y-3 text-sm text-gray-700 dark:text-gray-300">
+                <div className="flex justify-between items-center"> 
+                  <span>Focus message input</span>
+                  <span className="glass-surface px-2 py-0.5 text-xs rounded-lg shadow-none">Ctrl/⌘ + K</span> 
+                </div>
+                <div className="flex justify-between items-center">
+                  <span>Toggle this help</span>
+                  <span className="glass-surface px-2 py-0.5 text-xs rounded-lg shadow-none">Ctrl/⌘ + /</span> 
+                </div>
+                <div className="flex justify-between items-center">
+                  <span>Send message</span>
+                  <span className="glass-surface px-2 py-0.5 text-xs rounded-lg shadow-none">Enter</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span>New line in message</span>
+                  <span className="glass-surface px-2 py-0.5 text-xs rounded-lg shadow-none">Shift + Enter</span> 
+                </div>
+                <div className="flex justify-between items-center">
+                  <span>Cancel editing</span>
+                  <span className="glass-surface px-2 py-0.5 text-xs rounded-lg shadow-none">Esc</span> 
+                </div>
               </div>
             </div>
           </div>

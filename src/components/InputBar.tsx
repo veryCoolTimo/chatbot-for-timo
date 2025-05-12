@@ -3,12 +3,14 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Mic, Send, Paperclip, X } from 'lucide-react';
 import { motion } from 'framer-motion';
+import copy from 'copy-to-clipboard';
 
 interface InputBarProps {
   onSend: (message: string, files?: File[]) => void;
   isStreaming: boolean;
   isModelSelected: boolean;
   textareaRef?: React.RefObject<HTMLTextAreaElement | null>;
+  initialValue?: string;
 }
 
 // Define Window with SpeechRecognition interface for TypeScript
@@ -55,8 +57,14 @@ interface SpeechRecognitionErrorEvent {
   message?: string;
 }
 
-export default function InputBar({ onSend, isStreaming, isModelSelected, textareaRef: externalTextareaRef }: InputBarProps) {
-  const [input, setInput] = useState('');
+export default function InputBar({
+  onSend,
+  isStreaming,
+  isModelSelected,
+  textareaRef: externalTextareaRef,
+  initialValue = "",
+}: InputBarProps) {
+  const [input, setInput] = useState(initialValue);
   const [files, setFiles] = useState<File[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -65,6 +73,11 @@ export default function InputBar({ onSend, isStreaming, isModelSelected, textare
   
   // Use external ref if provided, otherwise use internal ref
   const textareaRef = externalTextareaRef || internalTextareaRef;
+
+  // Синхронизация с initialValue из пропсов
+  useEffect(() => {
+    setInput(initialValue);
+  }, [initialValue]);
 
   // Auto-resize textarea height
   useEffect(() => {
@@ -93,21 +106,19 @@ export default function InputBar({ onSend, isStreaming, isModelSelected, textare
     }
   }, []);
 
-  // Define handleSend using useCallback to stabilize its identity
-  const handleSend = useCallback(() => {
-    const currentInput = textareaRef.current?.value.trim() || '';
-    const currentFiles = files;
-    
-    if (currentInput || currentFiles.length > 0) {
-      onSend(currentInput, currentFiles);
+  // Переносим объявление isSendDisabled выше
+  const isSendDisabled = isStreaming || (!input.trim() && files.length === 0) || !isModelSelected;
+
+  const handleSendClick = useCallback(() => {
+    if (!isSendDisabled) {
+      onSend(input, files);
+      setInput("");
+      setFiles([]);
       if (textareaRef.current) {
-        textareaRef.current.value = ''; // Clear textarea via ref
-        textareaRef.current.style.height = 'auto'; // Reset height
+        textareaRef.current.style.height = 'auto';
       }
-      setFiles([]); // Clear file state
-      setInput(''); // Also clear state if still used for display
     }
-  }, [onSend, textareaRef, files]);
+  }, [onSend, input, files, isSendDisabled, textareaRef]);
 
   // Setup speech recognition effect
   useEffect(() => {
@@ -141,7 +152,7 @@ export default function InputBar({ onSend, isStreaming, isModelSelected, textare
               setIsRecording(false);
               // Auto-send if there's content
               if (textareaRef.current?.value.trim()) {
-                handleSend(); // handleSend is now stable due to useCallback
+                handleSendClick();
               }
             };
             
@@ -169,7 +180,7 @@ export default function InputBar({ onSend, isStreaming, isModelSelected, textare
         recognitionRef.current = null;
       }
     };
-  }, [handleSend, textareaRef]); // Add textareaRef to deps as it's used in onresult/onend
+  }, [handleSendClick, textareaRef]); // Add textareaRef to deps as it's used in onresult/onend
 
   const buttonVariants = {
     hover: { scale: 1.1 },
@@ -231,104 +242,53 @@ export default function InputBar({ onSend, isStreaming, isModelSelected, textare
     }
   };
 
-  // Disable send if streaming, no input/files, OR no model selected
-  const isSendDisabled = isStreaming || (!input.trim() && files.length === 0) || !isModelSelected;
-
   return (
-    <div className="glass-header p-4">
-      <div className="max-w-3xl mx-auto">
-        {/* Attached files preview */}
-        {files.length > 0 && (
-          <div className="flex flex-wrap gap-2 mb-3">
-            {files.map((file, index) => (
-              <div key={index} className="glass-card flex items-center gap-1 px-2 py-1 text-xs">
-                <span className="max-w-[150px] truncate">{file.name}</span>
-                <button 
-                  onClick={() => removeFile(index)} 
-                  className="p-0.5 hover:bg-red-500/20 rounded-full"
-                  disabled={isSendDisabled}
-                  aria-label="Remove file"
-                >
-                  <X size={12} />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-        
-        {/* Input area */}
-        <div 
-          className={`glass-card flex items-end gap-2 p-2 ${
-            isDragging ? 'ring-2 ring-blue-500' : ''
-          }`}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
+    <div className="glass-input p-2 flex items-end gap-2 w-full">
+      <textarea
+        ref={textareaRef}
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.shiftKey && !isSendDisabled) {
+            e.preventDefault();
+            handleSendClick();
+          }
+        }}
+        placeholder={isRecording ? "Listening..." : "Type a message or drop files..."}
+        className="flex-1 bg-transparent resize-none p-1 focus:outline-none min-h-[38px] max-h-40 no-scrollbar"
+        rows={1}
+        disabled={isStreaming || !isModelSelected}
+        style={{ outline: 'none', border: 'none' }}
+      />
+      <div className="btn-group">
+        <label 
+          className={`btn btn-secondary p-1.5 min-w-0 w-8 h-8 flex items-center justify-center ${isStreaming || !isModelSelected ? 'opacity-50 cursor-not-allowed' : 'hover:bg-white/20 dark:hover:bg-gray-700/30 cursor-pointer'}`}
         >
-          {/* File input button - Wrap label for motion */}
-          <motion.label 
-            className={`p-2 rounded-lg ${isSendDisabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-white/20 dark:hover:bg-gray-700/30 cursor-pointer'}`}
-            variants={buttonVariants}
-            whileHover="hover"
-            whileTap="tap"
-          >
-            <Paperclip className="w-5 h-5" />
-            <input 
-              type="file" 
-              multiple 
-              onChange={handleFileChange} 
-              className="hidden" 
-              disabled={isSendDisabled} 
-            />
-          </motion.label>
-          
-          {/* Mic button */}
-          <motion.button 
-            onClick={toggleRecording}
-            className={`p-2 rounded-lg ${isSendDisabled ? 'opacity-50 cursor-not-allowed' : isRecording ? 'bg-[#6D8CFF] text-white' : 'hover:bg-white/20 dark:hover:bg-gray-700/30'}`} 
-            disabled={isSendDisabled}
-            aria-label="Voice input"
-            variants={buttonVariants}
-            whileHover="hover"
-            whileTap="tap"
-          >
-            <Mic className="w-5 h-5" />
-          </motion.button>
-          
-          {/* Text input */}
-          <textarea
-            ref={textareaRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey && !isSendDisabled) {
-                e.preventDefault();
-                handleSend();
-              }
-            }}
-            placeholder={isDragging ? "Drop files here..." : isRecording ? "Говорите..." : "Type a message or drop files..."}
-            className="flex-1 bg-transparent focus:outline-none resize-none overflow-y-auto max-h-40 no-scrollbar"
-            rows={1}
-            disabled={isSendDisabled}
+          <Paperclip className="w-4 h-4" />
+          <input 
+            type="file" 
+            multiple 
+            onChange={handleFileChange} 
+            className="hidden" 
+            disabled={isStreaming || !isModelSelected} 
           />
-          
-          {/* Send button */}
-          <motion.button 
-            onClick={handleSend}
-            disabled={isSendDisabled}
-            className={`p-2 rounded-lg ${
-              isSendDisabled
-                ? 'bg-gray-300 dark:bg-gray-700 text-gray-500 dark:text-gray-400 cursor-not-allowed'
-                : 'bg-[#6D8CFF] hover:bg-[#829CFF] text-white'
-            }`}
-            aria-label="Send message"
-            variants={buttonVariants}
-            whileHover={isSendDisabled ? "" : "hover"}
-            whileTap={isSendDisabled ? "" : "tap"}
-          >
-            <Send className="w-5 h-5" />
-          </motion.button>
-        </div>
+        </label>
+        <button 
+          onClick={toggleRecording}
+          className={`btn btn-secondary p-1.5 min-w-0 w-8 h-8 flex items-center justify-center ${isStreaming || !isModelSelected ? 'opacity-50 cursor-not-allowed' : isRecording ? 'bg-accent text-white' : 'hover:bg-white/20 dark:hover:bg-gray-700/30'}`}
+          disabled={isStreaming || !isModelSelected}
+          aria-label="Voice input"
+        >
+          <Mic className="w-4 h-4" />
+        </button>
+        <button 
+          onClick={handleSendClick}
+          disabled={isSendDisabled}
+          className="btn btn-primary p-1.5 min-w-0 w-8 h-8 flex items-center justify-center"
+          aria-label="Send message"
+        >
+          <Send className="w-4 h-4" />
+        </button>
       </div>
     </div>
   );
