@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+:root {
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-bg: rgba(255, 255, 255, 0.3);
+  --glass-bg-dark: rgba(23, 23, 23, 0.3);
+}
+
+/* Base styles */
+html {
+  @apply h-full;
+}
+
+body {
+  @apply min-h-screen bg-gray-100 dark:bg-gray-900 text-gray-900 dark:text-gray-100;
+  font-family: 'Inter', sans-serif;
+}
+
+.dark {
+  color-scheme: dark;
+}
+
+/* Glass effect utilities */
+@layer components {
+  .glass {
+    @apply backdrop-blur-lg border border-white/10 bg-white/30 dark:bg-black/30 shadow-lg;
+  }
+  
+  .glass-header {
+    @apply backdrop-blur-lg bg-white/50 dark:bg-black/50 shadow-md border-b border-white/10 dark:border-gray-800;
+  }
+  
+  .glass-card {
+    @apply backdrop-blur-lg bg-white/40 dark:bg-gray-800/40 rounded-xl shadow-lg border border-white/20 dark:border-gray-700/30;
+  }
+  
+  .glass-input {
+    @apply backdrop-blur-sm bg-white/60 dark:bg-gray-800/60 border border-white/30 dark:border-gray-700/50 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none;
+  }
+  
+  .btn {
+    @apply px-4 py-2 rounded-lg font-medium transition-colors;
+  }
+  
+  .btn-primary {
+    @apply bg-blue-600 text-white hover:bg-blue-700;
+  }
+  
+  .btn-secondary {
+    @apply bg-white/30 dark:bg-gray-700/30 backdrop-blur-sm hover:bg-white/40 dark:hover:bg-gray-700/40;
+  }
+} 
