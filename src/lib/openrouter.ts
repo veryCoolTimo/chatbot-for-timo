@@ -52,8 +52,19 @@ export async function listModels(): Promise<Model[]> {
     }
 
     const data = await response.json();
-    // Filter models that have permission 'chat' (adjust based on actual API response structure if needed)
-    return data.data?.filter((model: any) => model.permission === 'chat' || model.id.includes('chat')) || DEFAULT_MODELS;
+    // Define a type for the model structure returned by the API
+    type ApiModel = { id: string; name?: string; description?: string; pricing?: { prompt?: number; completion?: number }; permission?: string; [key: string]: unknown };
+    return data.data?.filter((model: ApiModel) => model.permission === 'chat' || model.id.includes('chat'))
+            .map((model: ApiModel): Model => ({ // Map to our internal Model type
+              id: model.id,
+              name: model.name || model.id, // Fallback name
+              description: model.description || 'No description available',
+              pricing: { // Provide default pricing if missing
+                prompt: model.pricing?.prompt ?? 0,
+                completion: model.pricing?.completion ?? 0
+              }
+            })) 
+            || DEFAULT_MODELS;
   } catch (error) {
     console.error('Error fetching models:', error);
     return DEFAULT_MODELS; // Return default models on error
@@ -72,7 +83,12 @@ export async function sendChat(
     return simulateStreamingResponse(messages);
   }
 
-  const payload: any = {
+  const payload: {
+    model: string;
+    messages: { role: string; content: string }[];
+    stream: boolean;
+    // Add other potential payload properties here if needed
+  } = {
     model,
     messages: messages.map(m => ({ role: m.role, content: m.content })),
     stream: true

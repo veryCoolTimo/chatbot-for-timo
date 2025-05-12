@@ -4,17 +4,19 @@ import { useState, useEffect, useRef } from 'react';
 import Header from '../components/Header';
 import ChatWindow from '../components/ChatWindow';
 import InputBar from '../components/InputBar';
-import type { ChatMessage } from '../lib/openrouter';
+import type { ChatMessage, Model } from '../lib/openrouter';
 import { sendChat } from '../lib/openrouter';
-import { createParser } from 'eventsource-parser';
+import { createParser, EventSourceMessage } from 'eventsource-parser';
 import { encode } from 'gpt-tokenizer';
+import SettingsModal from '../components/SettingsModal';
 
 export default function Home() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [currentModel, setCurrentModel] = useState<string>('openai/gpt-3.5-turbo');
+  const [currentModel, setCurrentModel] = useState<Model | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [tokenCount, setTokenCount] = useState(0);
   const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const chatWindowRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -41,7 +43,7 @@ export default function Home() {
       }
     };
     countTokens();
-  }, [messages, currentModel]);
+  }, [messages]);
 
   // Add keyboard shortcuts
   useEffect(() => {
@@ -72,7 +74,36 @@ export default function Home() {
     setTokenCount(0);
   };
 
+  const handleModelChange = (model: Model | null) => {
+    setCurrentModel(model);
+    // Optionally reset chat when model changes
+    // handleNewChat(); 
+  };
+
+  const handleToggleSettings = () => {
+    setIsSettingsModalOpen(!isSettingsModalOpen);
+  };
+
+  const handleAddModel = (modelId: string) => {
+    if (!modelId.trim()) return;
+    // Create a temporary Model object for the custom ID
+    const customModel: Model = {
+      id: modelId.trim(),
+      name: `${modelId.trim()} (Custom)`,
+      description: 'Custom model added via settings',
+      pricing: { prompt: 0, completion: 0 } // Assume unknown/free or handle differently
+    };
+    setCurrentModel(customModel);
+    // Optionally, add to the list of models in Header state? 
+    // For now, just sets it as current. Can enhance later to add to dropdown.
+    setIsSettingsModalOpen(false); // Close settings after adding
+  };
+
   const handleSend = async (content: string, files?: File[]) => {
+    if (!currentModel) {
+      alert('Please select a model first.');
+      return;
+    }
     if (isStreaming && !content && (!files || files.length === 0)) return;
 
     const newMessage: ChatMessage = { role: 'user', content };
@@ -82,7 +113,7 @@ export default function Home() {
     try {
       const apiMessages = [...messages, newMessage].map(({ role, content }) => ({ role, content }));
 
-      const stream = await sendChat(apiMessages, currentModel, files);
+      const stream = await sendChat(apiMessages, currentModel.id, files);
 
       if (!stream) {
         throw new Error('No stream received from sendChat');
@@ -92,32 +123,34 @@ export default function Home() {
       const reader = stream.getReader();
       const decoder = new TextDecoder();
       
-      // @ts-ignore - Suppress TypeScript error for createParser callback
-      const parser = createParser((event: any) => { 
-        if (event.type === 'event') {
+      const parser = createParser({ 
+        onEvent: (event: EventSourceMessage) => { 
           if (event.data === '[DONE]') {
             setIsStreaming(false);
             return;
           }
-          try {
-            const json = JSON.parse(event.data);
-            const textChunk = json.choices?.[0]?.delta?.content;
-            if (textChunk) {
-              setMessages(prev => {
-                const lastMsgIndex = prev.length - 1;
-                if (lastMsgIndex < 0 || prev[lastMsgIndex].role !== 'assistant') {
-                  return [...prev, {role: 'assistant', content: textChunk}];
-                }
-                const updatedMessages = [...prev];
-                updatedMessages[lastMsgIndex] = {
-                  ...updatedMessages[lastMsgIndex],
-                  content: updatedMessages[lastMsgIndex].content + textChunk,
-                };
-                return updatedMessages;
-              });
+          if (event.data) {
+            try {
+              const json = JSON.parse(event.data);
+              const textChunk = json.choices?.[0]?.delta?.content;
+              if (textChunk) {
+                setMessages(prev => {
+                  const lastMsgIndex = prev.length - 1;
+                  if (lastMsgIndex < 0 || prev[lastMsgIndex].role !== 'assistant') {
+                    return [...prev, {role: 'assistant', content: textChunk}];
+                  }
+                  const updatedMessages = [...prev];
+                  updatedMessages[lastMsgIndex] = {
+                    ...updatedMessages[lastMsgIndex],
+                    content: updatedMessages[lastMsgIndex].content + textChunk,
+                  };
+                  return updatedMessages;
+                });
+              }
+            } catch (e) {
+              // It might not be JSON, could be other event types or malformed data
+              // console.error('Error parsing JSON chunk:', event.data, e);
             }
-          } catch (e) {
-            console.error('Error parsing JSON chunk:', event.data, e);
           }
         }
       });
@@ -146,15 +179,30 @@ export default function Home() {
       <div className="absolute inset-0 bg-[url('/grid.svg')] bg-center [mask-image:linear-gradient(180deg,white,rgba(255,255,255,0))] dark:[mask-image:linear-gradient(180deg,white,rgba(255,255,255,0))] pointer-events-none"></div>
       <Header 
         currentModel={currentModel}
-        onModelChange={setCurrentModel}
+        onModelChange={handleModelChange}
         onNewChat={handleNewChat}
         tokenCount={tokenCount}
+        onToggleSettings={handleToggleSettings}
       />
       <div ref={chatWindowRef} className="flex-1 overflow-hidden">
         <ChatWindow messages={messages} />
       </div>
-      <InputBar onSend={handleSend} isStreaming={isStreaming} textareaRef={textareaRef} />
+      <InputBar 
+        onSend={handleSend} 
+        isStreaming={isStreaming} 
+        isModelSelected={!!currentModel}
+        textareaRef={textareaRef} 
+      />
       
+      {/* Render Settings Modal conditionally */}
+      {isSettingsModalOpen && (
+        <SettingsModal 
+          isOpen={isSettingsModalOpen} 
+          onClose={handleToggleSettings}
+          onAddModel={handleAddModel}
+        />
+      )}
+
       {/* Help Modal */}
       {isHelpModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
